@@ -1,0 +1,827 @@
+// Prisma Schema for SerpentixPay - MariaDB/MySQL Version
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String     @id @default(uuid()) @db.VarChar(36)
+  email            String     @unique @db.VarChar(255)
+  password         String     @db.VarChar(255)
+  firstName        String     @db.VarChar(100)
+  lastName         String     @db.VarChar(100)
+  phone            String?    @db.VarChar(20)
+  avatar           String?    @db.VarChar(500)
+  role             Role       @default(CLIENT)
+  status           UserStatus @default(ACTIVE)
+  emailVerified    Boolean    @default(false)
+  twoFactorEnabled Boolean    @default(false)
+  twoFactorSecret  String?    @db.VarChar(255)
+  twoFactorBackupCodes String? @db.Text
+  stripeCustomerId String?    @db.VarChar(255)
+  lastLoginAt      DateTime?
+  lastLoginIp      String?    @db.VarChar(45)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  services      Service[]
+  invoices      Invoice[]
+  tickets       Ticket[]
+  ticketReplies TicketReply[]
+  orders        Order[]
+  sessions      Session[]
+  notifications Notification[]
+  addresses     Address[]
+  apiKeys       ApiKey[]
+  activityLogs  ActivityLog[]
+
+  @@index([email])
+  @@index([status])
+  @@map("users")
+}
+
+model Session {
+  id           String   @id @default(uuid()) @db.VarChar(36)
+  userId       String   @db.VarChar(36)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token        String   @unique @db.VarChar(500)
+  refreshToken String   @unique @db.VarChar(500)
+  userAgent    String?  @db.VarChar(500)
+  ipAddress    String?  @db.VarChar(45)
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
+  @@map("sessions")
+}
+
+model Address {
+  id         String      @id @default(uuid()) @db.VarChar(36)
+  userId     String      @db.VarChar(36)
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       AddressType @default(BILLING)
+  firstName  String      @db.VarChar(100)
+  lastName   String      @db.VarChar(100)
+  company    String?     @db.VarChar(200)
+  address1   String      @db.VarChar(255)
+  address2   String?     @db.VarChar(255)
+  city       String      @db.VarChar(100)
+  state      String      @db.VarChar(100)
+  postalCode String      @db.VarChar(20)
+  country    String      @db.VarChar(2)
+  phone      String?     @db.VarChar(20)
+  isDefault  Boolean     @default(false)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@index([userId])
+  @@map("addresses")
+}
+
+model Category {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  name        String   @db.VarChar(100)
+  slug        String   @unique @db.VarChar(100)
+  description String?  @db.Text
+  icon        String?  @db.VarChar(100)
+  image       String?  @db.VarChar(500)
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  products Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id               String   @id @default(uuid()) @db.VarChar(36)
+  categoryId       String   @db.VarChar(36)
+  category         Category @relation(fields: [categoryId], references: [id])
+  name             String   @db.VarChar(200)
+  slug             String   @unique @db.VarChar(200)
+  description      String?  @db.Text
+  shortDescription String?  @db.VarChar(500)
+  features         Json?
+  image            String?  @db.VarChar(500)
+  order            Int      @default(0)
+  isActive         Boolean  @default(true)
+  stockEnabled     Boolean  @default(false)
+  stockQuantity    Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  pricing       ProductPricing[]
+  configOptions ConfigOption[]
+  services      Service[]
+  orderItems    OrderItem[]
+
+  @@index([categoryId])
+  @@index([slug])
+  @@map("products")
+}
+
+model ProductPricing {
+  id           String       @id @default(uuid()) @db.VarChar(36)
+  productId    String       @db.VarChar(36)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  billingCycle BillingCycle
+  price        Decimal      @db.Decimal(10, 2)
+  setupFee     Decimal      @default(0) @db.Decimal(10, 2)
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@unique([productId, billingCycle])
+  @@map("product_pricing")
+}
+
+model ConfigOption {
+  id        String           @id @default(uuid()) @db.VarChar(36)
+  productId String           @db.VarChar(36)
+  product   Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name      String           @db.VarChar(100)
+  type      ConfigOptionType @default(SELECT)
+  required  Boolean          @default(false)
+  order     Int              @default(0)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  values ConfigOptionValue[]
+
+  @@index([productId])
+  @@map("config_options")
+}
+
+model ConfigOptionValue {
+  id             String       @id @default(uuid()) @db.VarChar(36)
+  configOptionId String       @db.VarChar(36)
+  configOption   ConfigOption @relation(fields: [configOptionId], references: [id], onDelete: Cascade)
+  name           String       @db.VarChar(100)
+  priceModifier  Decimal      @default(0) @db.Decimal(10, 2)
+  order          Int          @default(0)
+  isDefault      Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([configOptionId])
+  @@map("config_option_values")
+}
+
+model Service {
+  id               String        @id @default(uuid()) @db.VarChar(36)
+  userId           String        @db.VarChar(36)
+  user             User          @relation(fields: [userId], references: [id])
+  productId        String        @db.VarChar(36)
+  product          Product       @relation(fields: [productId], references: [id])
+  orderId          String?       @db.VarChar(36)
+  name             String        @db.VarChar(200)
+  domain           String?       @db.VarChar(255)
+  username         String?       @db.VarChar(100)
+  password         String?       @db.VarChar(255)
+  billingCycle     BillingCycle
+  price            Decimal       @db.Decimal(10, 2)
+  status           ServiceStatus @default(PENDING)
+  suspendReason    String?       @db.VarChar(500)
+  nextDueDate      DateTime?
+  registrationDate DateTime      @default(now())
+  terminationDate  DateTime?
+  notes            String?       @db.Text
+  serverId         String?       @db.VarChar(36)
+  serverData       Json?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  invoices Invoice[]
+
+  @@index([userId])
+  @@index([productId])
+  @@index([status])
+  @@map("services")
+}
+
+model Order {
+  id          String      @id @default(uuid()) @db.VarChar(36)
+  orderNumber String      @unique @db.VarChar(50)
+  userId      String      @db.VarChar(36)
+  user        User        @relation(fields: [userId], references: [id])
+  status      OrderStatus @default(PENDING)
+  subtotal    Decimal     @db.Decimal(10, 2)
+  discount    Decimal     @default(0) @db.Decimal(10, 2)
+  tax         Decimal     @default(0) @db.Decimal(10, 2)
+  total       Decimal     @db.Decimal(10, 2)
+  currency    String      @default("USD") @db.VarChar(3)
+  couponId    String?     @db.VarChar(36)
+  coupon      Coupon?     @relation(fields: [couponId], references: [id])
+  notes       String?     @db.Text
+  ipAddress   String?     @db.VarChar(45)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  items   OrderItem[]
+  invoice Invoice?
+
+  @@index([userId])
+  @@index([orderNumber])
+  @@map("orders")
+}
+
+model OrderItem {
+  id            String       @id @default(uuid()) @db.VarChar(36)
+  orderId       String       @db.VarChar(36)
+  order         Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId     String       @db.VarChar(36)
+  product       Product      @relation(fields: [productId], references: [id])
+  name          String       @db.VarChar(200)
+  billingCycle  BillingCycle
+  price         Decimal      @db.Decimal(10, 2)
+  setupFee      Decimal      @default(0) @db.Decimal(10, 2)
+  quantity      Int          @default(1)
+  configOptions Json?
+  createdAt     DateTime     @default(now())
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model Invoice {
+  id            String        @id @default(uuid()) @db.VarChar(36)
+  invoiceNumber String        @unique @db.VarChar(50)
+  userId        String        @db.VarChar(36)
+  user          User          @relation(fields: [userId], references: [id])
+  orderId       String?       @unique @db.VarChar(36)
+  order         Order?        @relation(fields: [orderId], references: [id])
+  serviceId     String?       @db.VarChar(36)
+  service       Service?      @relation(fields: [serviceId], references: [id])
+  status        InvoiceStatus @default(UNPAID)
+  subtotal      Decimal       @db.Decimal(10, 2)
+  discount      Decimal       @default(0) @db.Decimal(10, 2)
+  tax           Decimal       @default(0) @db.Decimal(10, 2)
+  total         Decimal       @db.Decimal(10, 2)
+  currency      String        @default("USD") @db.VarChar(3)
+  dueDate       DateTime
+  paidAt        DateTime?
+  notes         String?       @db.Text
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  items        InvoiceItem[]
+  transactions Transaction[]
+  payments     Payment[]
+
+  @@index([userId])
+  @@index([invoiceNumber])
+  @@index([status])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  invoiceId   String   @db.VarChar(36)
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  description String   @db.VarChar(500)
+  quantity    Int      @default(1)
+  unitPrice   Decimal  @db.Decimal(10, 2)
+  total       Decimal  @db.Decimal(10, 2)
+  createdAt   DateTime @default(now())
+
+  @@index([invoiceId])
+  @@map("invoice_items")
+}
+
+model Transaction {
+  id              String            @id @default(uuid()) @db.VarChar(36)
+  invoiceId       String            @db.VarChar(36)
+  invoice         Invoice           @relation(fields: [invoiceId], references: [id])
+  gateway         PaymentGateway
+  transactionId   String?           @db.VarChar(255)
+  amount          Decimal           @db.Decimal(10, 2)
+  currency        String            @default("USD") @db.VarChar(3)
+  status          TransactionStatus @default(PENDING)
+  gatewayResponse Json?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([invoiceId])
+  @@index([transactionId])
+  @@map("transactions")
+}
+
+model Coupon {
+  id          String     @id @default(uuid()) @db.VarChar(36)
+  code        String     @unique @db.VarChar(50)
+  description String?    @db.VarChar(500)
+  type        CouponType
+  value       Decimal    @db.Decimal(10, 2)
+  minAmount   Decimal?   @db.Decimal(10, 2)
+  maxUses     Int?
+  usedCount   Int        @default(0)
+  startDate   DateTime   @default(now())
+  endDate     DateTime?
+  validFrom   DateTime   @default(now())
+  validUntil  DateTime?
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  orders Order[]
+
+  @@map("coupons")
+}
+
+model Ticket {
+  id           String         @id @default(uuid()) @db.VarChar(36)
+  ticketNumber String         @unique @db.VarChar(50)
+  userId       String         @db.VarChar(36)
+  user         User           @relation(fields: [userId], references: [id])
+  department   String         @default("General") @db.VarChar(100)
+  subject      String         @db.VarChar(255)
+  priority     TicketPriority @default(MEDIUM)
+  status       TicketStatus   @default(OPEN)
+  lastReplyAt  DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  closedAt     DateTime?
+
+  replies          TicketReply[]
+  ticketDepartment TicketDepartment?
+
+  @@index([userId])
+  @@index([ticketNumber])
+  @@index([status])
+  @@map("tickets")
+}
+
+model TicketReply {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  ticketId    String   @db.VarChar(36)
+  ticket      Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  userId      String   @db.VarChar(36)
+  user        User     @relation(fields: [userId], references: [id])
+  message     String   @db.Text
+  attachments Json?
+  isStaff     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([ticketId])
+  @@map("ticket_replies")
+}
+
+model Notification {
+  id        String    @id @default(uuid()) @db.VarChar(36)
+  userId    String    @db.VarChar(36)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String    @db.VarChar(50)
+  title     String    @db.VarChar(200)
+  message   String    @db.Text
+  data      Json?
+  isRead    Boolean   @default(false)
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([isRead])
+  @@map("notifications")
+}
+
+model ApiKey {
+  id          String    @id @default(uuid()) @db.VarChar(36)
+  userId      String    @db.VarChar(36)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String    @db.VarChar(100)
+  key         String    @unique @db.VarChar(255)
+  permissions Json?
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([key])
+  @@map("api_keys")
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid()) @db.VarChar(36)
+  userId    String?  @db.VarChar(36)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String   @db.VarChar(100)
+  entity    String?  @db.VarChar(100)
+  entityId  String?  @db.VarChar(36)
+  details   Json?
+  ipAddress String?  @db.VarChar(45)
+  userAgent String?  @db.VarChar(500)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
+
+model Setting {
+  id        String   @id @default(uuid()) @db.VarChar(36)
+  key       String   @unique @db.VarChar(100)
+  value     String?  @db.Text
+  type      String   @default("string") @db.VarChar(20)
+  group     String   @default("general") @db.VarChar(50)
+  isPublic  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("settings")
+}
+
+// ============================================
+// MODELOS ADICIONALES PARA FUNCIONALIDAD COMPLETA
+// ============================================
+
+model Department {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  name        String   @db.VarChar(100)
+  description String?  @db.Text
+  email       String?  @db.VarChar(255)
+  isActive    Boolean  @default(true)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tickets TicketDepartment[]
+
+  @@map("departments")
+}
+
+model TicketDepartment {
+  id           String     @id @default(uuid()) @db.VarChar(36)
+  ticketId     String     @db.VarChar(36)
+  ticket       Ticket     @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  departmentId String     @db.VarChar(36)
+  department   Department @relation(fields: [departmentId], references: [id])
+  assignedAt   DateTime   @default(now())
+
+  @@unique([ticketId])
+  @@index([departmentId])
+  @@map("ticket_departments")
+}
+
+model PaymentMethod {
+  id          String         @id @default(uuid()) @db.VarChar(36)
+  name        String         @db.VarChar(100)
+  gateway     PaymentGateway
+  displayName String         @db.VarChar(100)
+  description String?        @db.Text
+  icon        String?        @db.VarChar(255)
+  config      Json?
+  isActive    Boolean        @default(true)
+  order       Int            @default(0)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  payments Payment[]
+
+  @@map("payment_methods")
+}
+
+model Payment {
+  id              String            @id @default(uuid()) @db.VarChar(36)
+  invoiceId       String            @db.VarChar(36)
+  invoice         Invoice           @relation(fields: [invoiceId], references: [id])
+  paymentMethodId String?           @db.VarChar(36)
+  paymentMethod   PaymentMethod?    @relation(fields: [paymentMethodId], references: [id])
+  gateway         PaymentGateway
+  transactionId   String?           @db.VarChar(255)
+  amount          Decimal           @db.Decimal(10, 2)
+  fee             Decimal           @default(0) @db.Decimal(10, 2)
+  currency        String            @default("USD") @db.VarChar(3)
+  status          TransactionStatus @default(PENDING)
+  gatewayResponse Json?
+  gatewayData     Json?
+  paidAt          DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  bankTransfer BankTransfer?
+
+  @@index([invoiceId])
+  @@index([transactionId])
+  @@map("payments")
+}
+
+model BankTransfer {
+  id            String              @id @default(uuid()) @db.VarChar(36)
+  paymentId     String              @unique @db.VarChar(36)
+  payment       Payment             @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  bankName      String              @db.VarChar(100)
+  bankType      String?             @db.VarChar(50)
+  accountName   String              @db.VarChar(200)
+  accountNumber String              @db.VarChar(50)
+  reference     String              @unique @db.VarChar(100)
+  proofImage    String?             @db.VarChar(500)
+  notes         String?             @db.Text
+  status        BankTransferStatus  @default(PENDING)
+  verifiedAt    DateTime?
+  verifiedBy    String?             @db.VarChar(36)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@map("bank_transfers")
+}
+
+model Announcement {
+  id          String           @id @default(uuid()) @db.VarChar(36)
+  title       String           @db.VarChar(255)
+  content     String           @db.Text
+  type        AnnouncementType @default(INFO)
+  isPublished Boolean          @default(false)
+  isPinned    Boolean          @default(false)
+  publishedAt DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([isPublished])
+  @@index([type])
+  @@map("announcements")
+}
+
+model ProvisionedServer {
+  id              String            @id @default(uuid()) @db.VarChar(36)
+  serviceId       String            @db.VarChar(36)
+  integrationType IntegrationType
+  externalId      String            @db.VarChar(255)
+  serverId        String?           @db.VarChar(255)
+  hostname        String?           @db.VarChar(255)
+  ipAddress       String?           @db.VarChar(45)
+  username        String?           @db.VarChar(100)
+  password        String?           @db.VarChar(255)
+  status          ProvisionedStatus @default(PENDING)
+  metadata        Json?
+  lastSyncAt      DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@unique([integrationType, externalId])
+  @@index([serviceId])
+  @@map("provisioned_servers")
+}
+
+model Integration {
+  id         String          @id @default(uuid()) @db.VarChar(36)
+  name       String          @db.VarChar(100)
+  type       IntegrationType
+  apiUrl     String          @db.VarChar(500)
+  apiKey     String?         @db.VarChar(500)
+  apiSecret  String?         @db.VarChar(500)
+  config     Json?
+  isActive   Boolean         @default(true)
+  lastTestAt DateTime?
+  testStatus String?         @db.VarChar(50)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@map("integrations")
+}
+
+model EmailTemplate {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  name        String   @unique @db.VarChar(100)
+  subject     String   @db.VarChar(255)
+  htmlContent String   @db.Text
+  textContent String?  @db.Text
+  variables   Json?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("email_templates")
+}
+
+model EmailLog {
+  id         String      @id @default(uuid()) @db.VarChar(36)
+  to         String      @db.VarChar(255)
+  subject    String      @db.VarChar(255)
+  templateId String?     @db.VarChar(36)
+  status     EmailStatus @default(PENDING)
+  sentAt     DateTime?
+  error      String?     @db.Text
+  createdAt  DateTime    @default(now())
+
+  @@index([status])
+  @@index([to])
+  @@map("email_logs")
+}
+
+model CronJob {
+  id         String    @id @default(uuid()) @db.VarChar(36)
+  name       String    @unique @db.VarChar(100)
+  schedule   String    @db.VarChar(50)
+  lastRunAt  DateTime?
+  nextRunAt  DateTime?
+  status     String    @default("idle") @db.VarChar(20)
+  lastResult String?   @db.Text
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@map("cron_jobs")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  SUPPORT
+  CLIENT
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING
+}
+
+enum AddressType {
+  BILLING
+  SHIPPING
+}
+
+enum BillingCycle {
+  MONTHLY
+  QUARTERLY
+  SEMI_ANNUALLY
+  ANNUALLY
+  BIENNIALLY
+  TRIENNIALLY
+  ONE_TIME
+}
+
+enum ServiceStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  TERMINATED
+  CANCELLED
+  FRAUD
+}
+
+enum OrderStatus {
+  PENDING
+  ACTIVE
+  FRAUD
+  CANCELLED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  UNPAID
+  PAID
+  OVERDUE
+  CANCELLED
+  REFUNDED
+  COLLECTIONS
+}
+
+enum TransactionStatus {
+  PENDING
+  SUCCESS
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentGateway {
+  PAYPAL
+  STRIPE
+  MERCADOPAGO
+  BANK_TRANSFER
+  CRYPTO
+  MANUAL
+}
+
+enum CouponType {
+  PERCENTAGE
+  FIXED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TicketStatus {
+  OPEN
+  ANSWERED
+  CUSTOMER_REPLY
+  IN_PROGRESS
+  ON_HOLD
+  CLOSED
+}
+
+enum ConfigOptionType {
+  SELECT
+  RADIO
+  CHECKBOX
+  TEXT
+  NUMBER
+}
+
+enum AnnouncementType {
+  INFO
+  WARNING
+  CRITICAL
+  MAINTENANCE
+  PROMOTION
+}
+
+enum IntegrationType {
+  PTERODACTYL
+  VIRTUALIZOR
+  CPANEL
+  PLESK
+  DIRECTADMIN
+  CUSTOM
+}
+
+enum ProvisionedStatus {
+  PENDING
+  PROVISIONING
+  ACTIVE
+  SUSPENDED
+  TERMINATED
+  ERROR
+}
+
+enum EmailStatus {
+  PENDING
+  SENT
+  FAILED
+  BOUNCED
+}
+
+enum BankTransferStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+  EXPIRED
+}
+
+// ============================================
+// MODELOS PARA GATEWAYS DE PAGO Y CRYPTO
+// ============================================
+
+model PaymentGatewaySettings {
+  id          String         @id @default(uuid()) @db.VarChar(36)
+  gateway     PaymentGateway @unique
+  name        String         @db.VarChar(100)
+  displayName String         @db.VarChar(100)
+  config      Json?
+  isActive    Boolean        @default(false)
+  testMode    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@map("payment_gateway_settings")
+}
+
+model CryptoPayment {
+  id              String   @id @default(uuid()) @db.VarChar(36)
+  paymentId       String   @unique @db.VarChar(36)
+  cryptoCurrency  String   @db.VarChar(20)
+  cryptoAmount    Decimal  @db.Decimal(18, 8)
+  walletAddress   String   @db.VarChar(255)
+  txHash          String?  @db.VarChar(255)
+  confirmations   Int      @default(0)
+  status          String   @default("pending") @db.VarChar(20)
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("crypto_payments")
+}
+
+model ServerIntegration {
+  id          String          @id @default(uuid()) @db.VarChar(36)
+  name        String          @db.VarChar(100)
+  type        IntegrationType
+  apiUrl      String          @db.VarChar(500)
+  apiKey      String?         @db.VarChar(500)
+  apiSecret   String?         @db.VarChar(500)
+  config      Json?
+  isActive    Boolean         @default(true)
+  lastTestAt  DateTime?
+  testStatus  String?         @db.VarChar(50)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@map("server_integrations")
+}

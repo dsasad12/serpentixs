@@ -1,0 +1,589 @@
+// Prisma Schema for SerpentixPay - SQLite Version
+// For local development without external database
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USUARIOS Y AUTENTICACIÓN
+// ============================================
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  password      String
+  firstName     String
+  lastName      String
+  phone         String?
+  avatar        String?
+  role          Role      @default(CLIENT)
+  status        UserStatus @default(ACTIVE)
+  emailVerified Boolean   @default(false)
+  twoFactorEnabled Boolean @default(false)
+  twoFactorSecret  String?
+  twoFactorBackupCodes String?
+  stripeCustomerId String?
+  lastLoginAt   DateTime?
+  lastLoginIp   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relaciones
+  services      Service[]
+  invoices      Invoice[]
+  tickets       Ticket[]
+  ticketReplies TicketReply[]
+  orders        Order[]
+  sessions      Session[]
+  notifications Notification[]
+  addresses     Address[]
+  apiKeys       ApiKey[]
+  activityLogs  ActivityLog[]
+
+  @@index([email])
+  @@index([status])
+  @@map("users")
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token        String   @unique
+  refreshToken String   @unique
+  userAgent    String?
+  ipAddress    String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
+  @@map("sessions")
+}
+
+model Address {
+  id          String  @id @default(uuid())
+  userId      String
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        AddressType @default(BILLING)
+  firstName   String
+  lastName    String
+  company     String?
+  address1    String
+  address2    String?
+  city        String
+  state       String
+  postalCode  String
+  country     String
+  phone       String?
+  isDefault   Boolean @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@map("addresses")
+}
+
+// ============================================
+// PRODUCTOS Y CATEGORÍAS
+// ============================================
+
+model Category {
+  id          String    @id @default(uuid())
+  name        String
+  slug        String    @unique
+  description String?
+  icon        String?
+  image       String?
+  order       Int       @default(0)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  products    Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id              String    @id @default(uuid())
+  categoryId      String
+  category        Category  @relation(fields: [categoryId], references: [id])
+  name            String
+  slug            String    @unique
+  description     String?
+  shortDescription String?
+  features        String?   // JSON string para SQLite
+  image           String?
+  order           Int       @default(0)
+  isActive        Boolean   @default(true)
+  stockEnabled    Boolean   @default(false)
+  stockQuantity   Int?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relaciones
+  pricing         ProductPricing[]
+  configOptions   ConfigOption[]
+  services        Service[]
+  orderItems      OrderItem[]
+
+  @@index([categoryId])
+  @@index([slug])
+  @@map("products")
+}
+
+model ProductPricing {
+  id            String       @id @default(uuid())
+  productId     String
+  product       Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  billingCycle  BillingCycle
+  price         Float
+  setupFee      Float        @default(0)
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@unique([productId, billingCycle])
+  @@map("product_pricing")
+}
+
+model ConfigOption {
+  id          String   @id @default(uuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name        String
+  type        ConfigOptionType @default(SELECT)
+  required    Boolean  @default(false)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  values      ConfigOptionValue[]
+
+  @@index([productId])
+  @@map("config_options")
+}
+
+model ConfigOptionValue {
+  id             String       @id @default(uuid())
+  configOptionId String
+  configOption   ConfigOption @relation(fields: [configOptionId], references: [id], onDelete: Cascade)
+  name           String
+  priceModifier  Float        @default(0)
+  order          Int          @default(0)
+  isDefault      Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([configOptionId])
+  @@map("config_option_values")
+}
+
+// ============================================
+// SERVICIOS
+// ============================================
+
+model Service {
+  id              String        @id @default(uuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id])
+  productId       String
+  product         Product       @relation(fields: [productId], references: [id])
+  orderId         String?
+  name            String
+  domain          String?
+  username        String?
+  password        String?
+  billingCycle    BillingCycle
+  price           Float
+  status          ServiceStatus @default(PENDING)
+  suspendReason   String?
+  nextDueDate     DateTime?
+  registrationDate DateTime     @default(now())
+  terminationDate DateTime?
+  notes           String?
+  
+  serverId        String?
+  serverData      String?       // JSON string para SQLite
+  
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  invoices        Invoice[]
+
+  @@index([userId])
+  @@index([productId])
+  @@index([status])
+  @@map("services")
+}
+
+// ============================================
+// PEDIDOS
+// ============================================
+
+model Order {
+  id            String      @id @default(uuid())
+  orderNumber   String      @unique
+  userId        String
+  user          User        @relation(fields: [userId], references: [id])
+  status        OrderStatus @default(PENDING)
+  subtotal      Float
+  discount      Float       @default(0)
+  tax           Float       @default(0)
+  total         Float
+  currency      String      @default("USD")
+  couponId      String?
+  coupon        Coupon?     @relation(fields: [couponId], references: [id])
+  notes         String?
+  ipAddress     String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  items         OrderItem[]
+  invoice       Invoice?
+
+  @@index([userId])
+  @@index([orderNumber])
+  @@map("orders")
+}
+
+model OrderItem {
+  id            String       @id @default(uuid())
+  orderId       String
+  order         Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId     String
+  product       Product      @relation(fields: [productId], references: [id])
+  name          String
+  billingCycle  BillingCycle
+  price         Float
+  setupFee      Float        @default(0)
+  quantity      Int          @default(1)
+  configOptions String?      // JSON string para SQLite
+  createdAt     DateTime     @default(now())
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+// ============================================
+// FACTURAS
+// ============================================
+
+model Invoice {
+  id            String        @id @default(uuid())
+  invoiceNumber String        @unique
+  userId        String
+  user          User          @relation(fields: [userId], references: [id])
+  orderId       String?       @unique
+  order         Order?        @relation(fields: [orderId], references: [id])
+  serviceId     String?
+  service       Service?      @relation(fields: [serviceId], references: [id])
+  status        InvoiceStatus @default(UNPAID)
+  subtotal      Float
+  discount      Float         @default(0)
+  tax           Float         @default(0)
+  total         Float
+  currency      String        @default("USD")
+  dueDate       DateTime
+  paidAt        DateTime?
+  notes         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  items         InvoiceItem[]
+  transactions  Transaction[]
+
+  @@index([userId])
+  @@index([invoiceNumber])
+  @@index([status])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String   @id @default(uuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  description String
+  quantity    Int      @default(1)
+  unitPrice   Float
+  total       Float
+  createdAt   DateTime @default(now())
+
+  @@index([invoiceId])
+  @@map("invoice_items")
+}
+
+// ============================================
+// TRANSACCIONES
+// ============================================
+
+model Transaction {
+  id              String            @id @default(uuid())
+  invoiceId       String
+  invoice         Invoice           @relation(fields: [invoiceId], references: [id])
+  gateway         PaymentGateway
+  transactionId   String?
+  amount          Float
+  currency        String            @default("USD")
+  status          TransactionStatus @default(PENDING)
+  gatewayResponse String?           // JSON string para SQLite
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([invoiceId])
+  @@index([transactionId])
+  @@map("transactions")
+}
+
+// ============================================
+// CUPONES
+// ============================================
+
+model Coupon {
+  id            String      @id @default(uuid())
+  code          String      @unique
+  type          CouponType
+  value         Float
+  minAmount     Float?
+  maxUses       Int?
+  usedCount     Int         @default(0)
+  validFrom     DateTime    @default(now())
+  validUntil    DateTime?
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  orders        Order[]
+
+  @@map("coupons")
+}
+
+// ============================================
+// TICKETS DE SOPORTE
+// ============================================
+
+model Ticket {
+  id          String       @id @default(uuid())
+  ticketNumber String      @unique
+  userId      String
+  user        User         @relation(fields: [userId], references: [id])
+  department  String       @default("General")
+  subject     String
+  priority    TicketPriority @default(MEDIUM)
+  status      TicketStatus @default(OPEN)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  closedAt    DateTime?
+
+  replies     TicketReply[]
+
+  @@index([userId])
+  @@index([ticketNumber])
+  @@index([status])
+  @@map("tickets")
+}
+
+model TicketReply {
+  id          String   @id @default(uuid())
+  ticketId    String
+  ticket      Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  message     String
+  attachments String?  // JSON string para SQLite
+  isStaff     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([ticketId])
+  @@map("ticket_replies")
+}
+
+// ============================================
+// NOTIFICACIONES
+// ============================================
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  message   String
+  data      String?  // JSON string para SQLite
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([isRead])
+  @@map("notifications")
+}
+
+// ============================================
+// API KEYS
+// ============================================
+
+model ApiKey {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  key         String    @unique
+  permissions String?   // JSON string para SQLite
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([key])
+  @@map("api_keys")
+}
+
+// ============================================
+// LOGS DE ACTIVIDAD
+// ============================================
+
+model ActivityLog {
+  id          String   @id @default(uuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action      String
+  entity      String?
+  entityId    String?
+  details     String?  // JSON string para SQLite
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
+
+// ============================================
+// CONFIGURACIÓN DEL SISTEMA
+// ============================================
+
+model Setting {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String?
+  type      String   @default("string")
+  group     String   @default("general")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("settings")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  SUPPORT
+  CLIENT
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING
+}
+
+enum AddressType {
+  BILLING
+  SHIPPING
+}
+
+enum BillingCycle {
+  MONTHLY
+  QUARTERLY
+  SEMI_ANNUALLY
+  ANNUALLY
+  BIENNIALLY
+  TRIENNIALLY
+  ONE_TIME
+}
+
+enum ServiceStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  TERMINATED
+  CANCELLED
+  FRAUD
+}
+
+enum OrderStatus {
+  PENDING
+  ACTIVE
+  FRAUD
+  CANCELLED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  UNPAID
+  PAID
+  CANCELLED
+  REFUNDED
+  COLLECTIONS
+}
+
+enum TransactionStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum PaymentGateway {
+  PAYPAL
+  STRIPE
+  MERCADOPAGO
+  BANK_TRANSFER
+  CRYPTO
+  MANUAL
+}
+
+enum CouponType {
+  PERCENTAGE
+  FIXED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TicketStatus {
+  OPEN
+  ANSWERED
+  CUSTOMER_REPLY
+  IN_PROGRESS
+  ON_HOLD
+  CLOSED
+}
+
+enum ConfigOptionType {
+  SELECT
+  RADIO
+  CHECKBOX
+  TEXT
+  NUMBER
+}
