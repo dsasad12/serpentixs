@@ -95,7 +95,7 @@ sudo useradd -m -d /home/serpentixpay -s /bin/bash serpentixpay
 ```bash
 sudo mkdir -p /var/www/serpentixpay
 cd /var/www/serpentixpay
-sudo git clone https://github.com/serpentix/serpentixpay.git .
+sudo git clone [https://github.com/dsasad12/serpentixs.git] .
 sudo chown -R serpentixpay:serpentixpay /var/www/serpentixpay
 ```
 
@@ -349,3 +349,4 @@ npx tsx prisma/seed.ts
 ## Siguiente: Configuración
 
 Continúa con la [Guía de Configuración](CONFIGURATION.md) para personalizar tu instalación.
+
